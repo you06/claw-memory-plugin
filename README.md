@@ -24,7 +24,11 @@ openclaw plugins install -l ~/claw-workspace/claw-memory-plugin
 
 ## Configuration
 
-In your `openclaw.json`, assign the memory slot and provide connection details:
+In your `openclaw.json`, assign the memory slot and provide connection details. The plugin supports two modes:
+
+### Direct mode
+
+Connects directly to your TiDB database. You manage the TiDB instance yourself.
 
 ```jsonc
 {
@@ -35,12 +39,10 @@ In your `openclaw.json`, assign the memory slot and provide connection details:
     "entries": {
       "memory-tidb": {
         "config": {
-          "tidb": {
-            "host": "gateway01.us-east-1.prod.aws.tidbcloud.com",
-            "username": "your_user",
-            "password": "${TIDB_PASSWORD}",
-            "database": "memory"
-          },
+          "host": "gateway01.us-east-1.prod.aws.tidbcloud.com",
+          "user": "your_user",
+          "password": "${TIDB_PASSWORD}",
+          "database": "memory",
           "embedding": {
             "apiKey": "${OPENAI_API_KEY}",
             "model": "text-embedding-3-small"
@@ -54,7 +56,46 @@ In your `openclaw.json`, assign the memory slot and provide connection details:
 }
 ```
 
+### API mode
+
+Connects through a [claw-memory](https://github.com/siddontang/claw-memory) Cloudflare Worker. No local database setup needed — the Worker manages TiDB Zero instances for you.
+
+```jsonc
+{
+  "plugins": {
+    "slots": {
+      "memory": "memory-tidb"
+    },
+    "entries": {
+      "memory-tidb": {
+        "config": {
+          "apiUrl": "https://claw-memory.example.workers.dev",
+          "token": "${CLAW_MEMORY_TOKEN}",
+          "encryptionKey": "${CLAW_MEMORY_KEY}",  // optional, client-side encryption
+          "autoRecall": true,
+          "autoCapture": true
+        }
+      }
+    }
+  }
+}
+```
+
+> **Note:** Direct mode and API mode are mutually exclusive. Embedding config is optional in either mode (API mode handles embeddings server-side).
+
 Config values that look like `${VAR_NAME}` are resolved from environment variables at runtime.
+
+### Claiming a TiDB Zero instance
+
+TiDB Zero instances are free but expire after **30 days**. To keep your data permanently, **claim** the instance — this converts it to a free TiDB Cloud Starter cluster with no expiration.
+
+In API mode, use the `memory_claim` tool or CLI:
+
+```bash
+openclaw tidb-memory claim
+# → Claim URL: https://tidbcloud.com/claim/...
+# Open the URL in a browser to complete the claim.
+```
 
 ### TiDB Zero vs TiDB Cloud
 
@@ -100,12 +141,26 @@ Delete a specific memory.
 
 At least one of `query` or `memoryId` must be provided.
 
+### memory_claim (API mode only)
+
+Claim your TiDB Zero instance to convert it from a 30-day temporary instance to a permanent free TiDB Cloud Starter cluster. Returns a claim URL to open in a browser.
+
+No parameters.
+
+### memory_info (API mode only)
+
+Get information about your memory space: token status, creation date, expiration, and claim URL.
+
+No parameters.
+
 ## CLI
 
 ```bash
 openclaw tidb-memory list              # show total memory count
 openclaw tidb-memory search <query>    # search memories (--limit N)
 openclaw tidb-memory stats             # database & embedding stats
+openclaw tidb-memory claim             # get claim URL (API mode only)
+openclaw tidb-memory info              # show token info (API mode only)
 ```
 
 ## Development

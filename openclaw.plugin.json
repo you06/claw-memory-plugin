@@ -2,15 +2,33 @@
   "id": "memory-tidb",
   "kind": "memory",
   "uiHints": {
+    "apiUrl": {
+      "label": "API URL",
+      "placeholder": "https://claw-memory.example.workers.dev",
+      "help": "Worker API endpoint (use this OR direct TiDB connection, not both)"
+    },
+    "token": {
+      "label": "API Token",
+      "sensitive": true,
+      "placeholder": "clawmem_xxx",
+      "help": "Authentication token for the Worker API"
+    },
+    "encryptionKey": {
+      "label": "Encryption Key",
+      "sensitive": true,
+      "placeholder": "optional-client-key",
+      "help": "Optional client-side encryption key for memory content",
+      "advanced": true
+    },
     "host": {
       "label": "TiDB Host",
       "placeholder": "gateway01.us-east-1.prod.aws.tidbcloud.com",
-      "help": "TiDB Serverless cluster hostname"
+      "help": "TiDB Serverless cluster hostname (direct mode)"
     },
     "user": {
       "label": "TiDB User",
       "placeholder": "your_tidb_user",
-      "help": "TiDB database username"
+      "help": "TiDB database username (direct mode)"
     },
     "password": {
       "label": "TiDB Password",
@@ -53,17 +71,33 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "apiUrl": {
+        "type": "string",
+        "description": "Worker API endpoint (API mode)"
+      },
+      "token": {
+        "type": "string",
+        "description": "Authentication token (API mode)"
+      },
+      "encryptionKey": {
+        "type": "string",
+        "description": "Optional client-side encryption key (API mode)"
+      },
       "host": {
-        "type": "string"
+        "type": "string",
+        "description": "TiDB cluster hostname (direct mode)"
       },
       "user": {
-        "type": "string"
+        "type": "string",
+        "description": "TiDB username (direct mode)"
       },
       "password": {
-        "type": "string"
+        "type": "string",
+        "description": "TiDB password (direct mode)"
       },
       "database": {
-        "type": "string"
+        "type": "string",
+        "description": "TiDB database name (direct mode)"
       },
       "embedding": {
         "type": "object",

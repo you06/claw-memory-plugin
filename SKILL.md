@@ -7,6 +7,10 @@ description: OpenClaw plugin for TiDB-backed long-term memory with vector search
 
 An OpenClaw plugin that stores agent memories in TiDB with vector search (OpenAI embeddings). Once installed, `memory_recall`, `memory_store`, and `memory_forget` tools automatically connect to TiDB — no manual server startup needed.
 
+Supports two connection modes:
+- **Direct mode** — connects to TiDB Serverless directly (you manage the database)
+- **API mode** — connects through a claw-memory Cloudflare Worker (no local DB setup). Adds `memory_claim` and `memory_info` tools for managing your TiDB Zero instance, including claiming it as a permanent free Starter cluster.
+
 ## Prerequisites
 
 - **TiDB database** — either:
@@ -33,7 +37,9 @@ This will:
 
 ## Configuration
 
-Edit your workspace `openclaw.json` (usually `~/.openclaw-<profile>/openclaw.json`):
+Edit your workspace `openclaw.json` (usually `~/.openclaw-<profile>/openclaw.json`).
+
+### Direct mode (connect to TiDB yourself)
 
 ```jsonc
 {
@@ -42,19 +48,35 @@ Edit your workspace `openclaw.json` (usually `~/.openclaw-<profile>/openclaw.jso
       "memory-tidb": {
         "enabled": true,
         "config": {
-          // Required: TiDB connection
           "host": "gateway01.us-west-2.prod.aws.tidbcloud.com",
           "user": "your_tidb_user",
           "password": "your_tidb_password",
           "database": "claw_memory",
-
-          // Optional: enables vector/semantic search
           "embedding": {
             "apiKey": "sk-proj-...",
             "model": "text-embedding-3-small"
           },
+          "autoRecall": true,
+          "autoCapture": false
+        }
+      }
+    }
+  }
+}
+```
 
-          // Optional: auto behaviors
+### API mode (via claw-memory Worker)
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "memory-tidb": {
+        "enabled": true,
+        "config": {
+          "apiUrl": "https://claw-memory.example.workers.dev",
+          "token": "${CLAW_MEMORY_TOKEN}",
+          "encryptionKey": "${CLAW_MEMORY_KEY}",  // optional
           "autoRecall": true,
           "autoCapture": false
         }
@@ -107,11 +129,26 @@ memory_forget(memoryId="abc-123")
 memory_forget(query="outdated preference")
 ```
 
+### memory_claim (API mode only)
+Claim your TiDB Zero instance to make it permanent (converts 30-day Zero to free Starter).
+```
+memory_claim()
+# → Returns a claim URL to open in a browser
+```
+
+### memory_info (API mode only)
+Get token status, expiration, and claim URL.
+```
+memory_info()
+```
+
 ### CLI Commands
 ```bash
 openclaw tidb-memory list              # total memory count
 openclaw tidb-memory search <query>    # search memories
 openclaw tidb-memory stats             # database & embedding stats
+openclaw tidb-memory claim             # get claim URL (API mode only)
+openclaw tidb-memory info              # show token info (API mode only)
 ```
 
 ## TiDB Zero Quick Start
@@ -125,7 +162,7 @@ curl -s -X POST https://zero.tidbapi.com/v1alpha1/instances | jq .
 
 Returns `host`, `port`, `user`, `password`. Use these in the config above. The database is auto-created on first startup.
 
-To keep data permanently, either **Claim** the TiDB Zero instance or create a [TiDB Cloud Serverless](https://tidbcloud.com/) cluster directly.
+To keep data permanently, **claim** the instance (`openclaw tidb-memory claim` or use the `memory_claim` tool) to convert it to a free TiDB Cloud Starter cluster, or create a [TiDB Cloud Serverless](https://tidbcloud.com/) cluster directly.
 
 ## Troubleshooting
 

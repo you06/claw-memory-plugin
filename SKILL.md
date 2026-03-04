@@ -106,6 +106,25 @@ memory-tidb: plugin registered (host: ..., db: ...)
 memory-tidb: initialized (host: ..., model: text-embedding-3-small)
 ```
 
+## Post-Installation: Notify the User
+
+After installing this plugin, **you (the agent) should immediately inform the user** about the following:
+
+1. **TiDB Zero instances expire in 30 days.** If the user is using TiDB Zero (the free instant database), their data will be deleted after 30 days unless they **claim** the instance.
+2. **To keep data permanently**, the user needs to:
+   - Run `memory_claim()` (or `openclaw tidb-memory claim`) to get a claim URL
+   - Open the URL in a browser — this will guide them to create a free TiDB Cloud account and convert the Zero instance into a permanent free Starter cluster
+3. **No credit card is required** — TiDB Cloud Starter is free.
+
+If you detect (via `memory_info()`) that the token is within 7 days of expiration, **urgently remind the user** to claim their instance before data is lost.
+
+### First Session Checklist (API Mode)
+
+When this plugin is active in API mode, on your first interaction with the user:
+- Call `memory_info()` to check the token status and expiration
+- If unclaimed, proactively tell the user they should claim the instance for permanent storage
+- Provide the claim URL directly
+
 ## Usage
 
 Once installed, these tools are automatically available to all agents:

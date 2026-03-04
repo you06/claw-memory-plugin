@@ -408,23 +408,64 @@ const memoryPlugin = {
     // Lifecycle Hooks
     // ========================================================================
 
-    if (cfg.autoRecall) {
-      api.on("before_agent_start", async (event) => {
-        if (!event.prompt || event.prompt.length < 5) return;
+    // Track claim status to avoid repeated checks
+    let claimWarning: string | null = null;
+    let lastClaimCheck = 0;
+    const CLAIM_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+    async function checkClaimStatus(): Promise<string | null> {
+      if (cfg.mode !== "api" || !apiClient) return null;
+      const now = Date.now();
+      if (now - lastClaimCheck < CLAIM_CHECK_INTERVAL_MS) return claimWarning;
+      lastClaimCheck = now;
+      try {
+        const info = await apiClient.getTokenInfo(cfg.api.token);
+        if (!info.expires_at) { claimWarning = null; return null; }
+        const expiresAt = new Date(info.expires_at).getTime();
+        const daysLeft = Math.floor((expiresAt - now) / (1000 * 60 * 60 * 24));
+        if (daysLeft <= 7) {
+          const claimUrl = info.claim_url ?? "(run `memory_claim()` to get the URL)";
+          claimWarning = `⚠️ Your TiDB Zero instance expires in ${daysLeft} day(s)! To keep your memories permanently, claim it as a free TiDB Cloud Starter cluster: ${claimUrl}\nThe user needs to open this URL in a browser to complete the claim (requires a TiDB Cloud account, free to create).`;
+          api.logger.warn(`memory-tidb: TiDB Zero expires in ${daysLeft} days — remind user to claim`);
+        } else {
+          claimWarning = null;
+        }
+      } catch (err) {
+        api.logger.warn(`memory-tidb: claim status check failed: ${String(err)}`);
+      }
+      return claimWarning;
+    }
+
+    api.on("before_agent_start", async (event) => {
+      const parts: string[] = [];
+
+      // Claim expiration warning (API mode)
+      const warning = await checkClaimStatus();
+      if (warning) {
+        parts.push(`<memory-system-notice>\n${warning}\nPlease inform the user about this urgently.\n</memory-system-notice>`);
+      }
+
+      // Auto-recall
+      if (cfg.autoRecall && event.prompt && event.prompt.length >= 5) {
         try {
           const results = await adapter.search(event.prompt, 3);
-          if (results.length === 0) return;
-          api.logger.info?.(`memory-tidb: injecting ${results.length} memories into context`);
-          return {
-            prependContext: formatRelevantMemoriesContext(
-              results.map((r) => ({ category: detectCategory(r.content), text: r.content })),
-            ),
-          };
+          if (results.length > 0) {
+            api.logger.info?.(`memory-tidb: injecting ${results.length} memories into context`);
+            parts.push(
+              formatRelevantMemoriesContext(
+                results.map((r) => ({ category: detectCategory(r.content), text: r.content })),
+              ),
+            );
+          }
         } catch (err) {
           api.logger.warn(`memory-tidb: recall failed: ${String(err)}`);
         }
-      });
-    }
+      }
+
+      if (parts.length > 0) {
+        return { prependContext: parts.join("\n\n") };
+      }
+    });
 
     if (cfg.autoCapture) {
       api.on("agent_end", async (event) => {
@@ -553,6 +594,11 @@ const memoryPlugin = {
           api.logger.info(
             `memory-tidb: initialized (API mode, url: ${(cfg as ApiMemoryConfig).api.apiUrl})`,
           );
+          // Check claim status on startup
+          const warning = await checkClaimStatus();
+          if (warning) {
+            api.logger.warn(`memory-tidb: ${warning}`);
+          }
         }
       },
       stop: () => {

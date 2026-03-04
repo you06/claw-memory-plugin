@@ -1,0 +1,22 @@
+{
+  "name": "@openclaw/memory-tidb",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw TiDB-backed long-term memory plugin with vector search",
+  "type": "module",
+  "dependencies": {
+    "@sinclair/typebox": "0.34.48",
+    "@tidbcloud/serverless": "^0.2.0",
+    "openai": "^6.25.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "openclaw": "^2026.3.2",
+    "typescript": "^5.9.3"
+  }
+}

@@ -349,19 +349,24 @@ const memoryPlugin = {
     );
 
     // ========================================================================
-    // Tools — memory_claim / memory_info (API mode only)
+    // Tools — memory_claim / memory_info (all modes)
     // ========================================================================
 
-    if (cfg.mode === "api" && apiClient) {
-      api.registerTool(
-        {
-          name: "memory_claim",
-          label: "Memory Claim",
-          description:
-            "Claim your TiDB Zero instance to make it permanent (converts 30-day Zero to free Starter). Returns a claim URL to open in browser.",
-          parameters: Type.Object({}),
-          async execute() {
-            const result = await apiClient!.claimToken(cfg.api.token);
+    // Helper to detect if a direct-mode host is TiDB Zero
+    function isTidbZeroHost(host: string): boolean {
+      return /zero\.tidbapi\.com|zero\.tidbcloud\.com/i.test(host);
+    }
+
+    api.registerTool(
+      {
+        name: "memory_claim",
+        label: "Memory Claim",
+        description:
+          "Claim your TiDB Zero instance to make it permanent (converts 30-day Zero to free Starter). Returns a claim URL to open in browser.",
+        parameters: Type.Object({}),
+        async execute() {
+          if (cfg.mode === "api" && apiClient) {
+            const result = await apiClient.claimToken(cfg.api.token);
             return {
               content: [
                 {
@@ -371,21 +376,48 @@ const memoryPlugin = {
               ],
               details: result,
             };
-          },
+          }
+          // Direct mode
+          if (cfg.mode === "direct") {
+            const dc = cfg as DirectMemoryConfig;
+            if (isTidbZeroHost(dc.tidb.host)) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: `You are connected to a TiDB Zero instance (${dc.tidb.host}) in direct mode.\n\nTiDB Zero instances expire after 30 days. To keep your data permanently, visit https://tidbcloud.com/ and create a free Starter cluster, then update your plugin config with the new connection details.\n\nAlternatively, switch to API mode for automatic claim support.`,
+                  },
+                ],
+                details: { mode: "direct", host: dc.tidb.host, zero: true },
+              };
+            }
+          }
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Your memory database is already using a persistent TiDB connection. No claim needed.",
+              },
+            ],
+            details: { mode: cfg.mode, zero: false },
+          };
         },
-        { name: "memory_claim" },
-      );
+      },
+      { name: "memory_claim" },
+    );
 
-      api.registerTool(
-        {
-          name: "memory_info",
-          label: "Memory Info",
-          description:
-            "Get information about your memory space: token status, expiration, claim URL.",
-          parameters: Type.Object({}),
-          async execute() {
-            const info = await apiClient!.getTokenInfo(cfg.api.token);
+    api.registerTool(
+      {
+        name: "memory_info",
+        label: "Memory Info",
+        description:
+          "Get information about your memory backend: connection mode, database status, expiration, and claim URL.",
+        parameters: Type.Object({}),
+        async execute() {
+          if (cfg.mode === "api" && apiClient) {
+            const info = await apiClient.getTokenInfo(cfg.api.token);
             const lines = [
+              `Mode: API`,
               `Token: ${info.token.slice(0, 12)}...`,
               `Created: ${info.created_at}`,
               `Expires: ${info.expires_at}`,
@@ -396,13 +428,27 @@ const memoryPlugin = {
             }
             return {
               content: [{ type: "text" as const, text: lines.join("\n") }],
-              details: info,
+              details: { ...info, mode: "api" },
             };
-          },
+          }
+          // Direct mode
+          const dcfg = cfg as DirectMemoryConfig;
+          const isZero = isTidbZeroHost(dcfg.tidb.host);
+          const lines = [
+            `Mode: Direct`,
+            `Host: ${dcfg.tidb.host}`,
+            `Database: ${dcfg.tidb.database}`,
+            `Embedding: ${cfg.embedding?.model ?? "not configured (text search only)"}`,
+            `TiDB Zero: ${isZero ? "yes ⚠️ (expires after 30 days — consider claiming or migrating)" : "no (persistent)"}`,
+          ];
+          return {
+            content: [{ type: "text" as const, text: lines.join("\n") }],
+            details: { mode: "direct", host: dcfg.tidb.host, database: dcfg.tidb.database, zero: isZero },
+          };
         },
-        { name: "memory_info" },
-      );
-    }
+      },
+      { name: "memory_info" },
+    );
 
     // ========================================================================
     // Lifecycle Hooks
@@ -414,25 +460,35 @@ const memoryPlugin = {
     const CLAIM_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
     async function checkClaimStatus(): Promise<string | null> {
-      if (cfg.mode !== "api" || !apiClient) return null;
       const now = Date.now();
       if (now - lastClaimCheck < CLAIM_CHECK_INTERVAL_MS) return claimWarning;
       lastClaimCheck = now;
-      try {
-        const info = await apiClient.getTokenInfo(cfg.api.token);
-        if (!info.expires_at) { claimWarning = null; return null; }
-        const expiresAt = new Date(info.expires_at).getTime();
-        const daysLeft = Math.floor((expiresAt - now) / (1000 * 60 * 60 * 24));
-        if (daysLeft <= 7) {
-          const claimUrl = info.claim_url ?? "(run `memory_claim()` to get the URL)";
-          claimWarning = `⚠️ Your TiDB Zero instance expires in ${daysLeft} day(s)! To keep your memories permanently, claim it as a free TiDB Cloud Starter cluster: ${claimUrl}\nThe user needs to open this URL in a browser to complete the claim (requires a TiDB Cloud account, free to create).`;
-          api.logger.warn(`memory-tidb: TiDB Zero expires in ${daysLeft} days — remind user to claim`);
-        } else {
-          claimWarning = null;
+
+      if (cfg.mode === "api" && apiClient) {
+        try {
+          const info = await apiClient.getTokenInfo(cfg.api.token);
+          if (!info.expires_at) { claimWarning = null; return null; }
+          const expiresAt = new Date(info.expires_at).getTime();
+          const daysLeft = Math.floor((expiresAt - now) / (1000 * 60 * 60 * 24));
+          if (daysLeft <= 7) {
+            const claimUrl = info.claim_url ?? "(run `memory_claim()` to get the URL)";
+            claimWarning = `⚠️ Your TiDB Zero instance expires in ${daysLeft} day(s)! To keep your memories permanently, claim it as a free TiDB Cloud Starter cluster: ${claimUrl}\nThe user needs to open this URL in a browser to complete the claim (requires a TiDB Cloud account, free to create).`;
+            api.logger.warn(`memory-tidb: TiDB Zero expires in ${daysLeft} days — remind user to claim`);
+          } else {
+            claimWarning = null;
+          }
+        } catch (err) {
+          api.logger.warn(`memory-tidb: claim status check failed: ${String(err)}`);
         }
-      } catch (err) {
-        api.logger.warn(`memory-tidb: claim status check failed: ${String(err)}`);
+      } else if (cfg.mode === "direct") {
+        const dc = cfg as DirectMemoryConfig;
+        if (isTidbZeroHost(dc.tidb.host)) {
+          // Direct mode connecting to TiDB Zero — we can't check expiration via API,
+          // but we can always warn since Zero instances have a 30-day TTL
+          claimWarning = `⚠️ Your memory database is connected to a TiDB Zero instance (${dc.tidb.host}), which expires after 30 days.\nTo keep your data permanently, tell the user to visit https://tidbcloud.com/ and create a free Starter cluster, then update the plugin config.\nAlternatively, use \`memory_claim()\` for migration guidance.`;
+        }
       }
+
       return claimWarning;
     }
 

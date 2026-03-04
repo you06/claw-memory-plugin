@@ -118,12 +118,13 @@ After installing this plugin, **you (the agent) should immediately inform the us
 
 If you detect (via `memory_info()`) that the token is within 7 days of expiration, **urgently remind the user** to claim their instance before data is lost.
 
-### First Session Checklist (API Mode)
+### First Session Checklist
 
-When this plugin is active in API mode, on your first interaction with the user:
-- Call `memory_info()` to check the token status and expiration
-- If unclaimed, proactively tell the user they should claim the instance for permanent storage
-- Provide the claim URL directly
+On your first interaction with the user after this plugin is installed:
+- Call `memory_info()` to check the current backend status (works in both API and direct mode)
+- If the instance is a TiDB Zero (30-day TTL), proactively tell the user they should claim or migrate for permanent storage
+- In API mode: provide the claim URL directly via `memory_claim()`
+- In direct mode: guide the user to create a free TiDB Cloud Starter cluster at https://tidbcloud.com/
 
 ## Usage
 
@@ -148,17 +149,20 @@ memory_forget(memoryId="abc-123")
 memory_forget(query="outdated preference")
 ```
 
-### memory_claim (API mode only)
-Claim your TiDB Zero instance to make it permanent (converts 30-day Zero to free Starter).
+### memory_claim
+Claim your TiDB Zero instance to make it permanent.
+- **API mode:** Returns a claim URL to open in a browser (converts Zero to free Starter).
+- **Direct mode:** Detects if you're connected to TiDB Zero and provides migration guidance.
+- **Persistent connection:** Reports no action needed.
 ```
 memory_claim()
-# → Returns a claim URL to open in a browser
 ```
 
-### memory_info (API mode only)
-Get token status, expiration, and claim URL.
+### memory_info
+Get information about the memory backend: connection mode, status, expiration, claim URL.
 ```
 memory_info()
+# Works in both API and direct mode
 ```
 
 ### CLI Commands
@@ -166,8 +170,8 @@ memory_info()
 openclaw tidb-memory list              # total memory count
 openclaw tidb-memory search <query>    # search memories
 openclaw tidb-memory stats             # database & embedding stats
-openclaw tidb-memory claim             # get claim URL (API mode only)
-openclaw tidb-memory info              # show token info (API mode only)
+openclaw tidb-memory claim             # get claim URL / migration guidance
+openclaw tidb-memory info              # show backend status and expiration
 ```
 
 ## TiDB Zero Quick Start

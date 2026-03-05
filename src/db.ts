@@ -34,21 +34,20 @@ export async function execute(
 
 /**
  * Initialize the database and memories table.
- * The VECTOR dimension is derived from the configured embedding model.
  */
 export async function initSchema(
   conn: Connection,
   database: string,
-  vectorDims: number,
+  embeddingModel = "tidbcloud_free/amazon/titan-embed-text-v2",
 ): Promise<void> {
   if (!/^[a-zA-Z0-9_]+$/.test(database)) {
     throw new Error(
       `Invalid database name "${database}": must contain only alphanumeric characters and underscores`,
     );
   }
-  if (!Number.isInteger(vectorDims) || vectorDims <= 0) {
+  if (!/^[a-zA-Z0-9_/-]+$/.test(embeddingModel)) {
     throw new Error(
-      `Invalid vectorDims "${vectorDims}": must be a positive integer`,
+      `Invalid embeddingModel "${embeddingModel}": must contain only alphanumeric characters, underscores, slashes, and dashes`,
     );
   }
 
@@ -62,10 +61,13 @@ export async function initSchema(
       source VARCHAR(100),
       tags JSON,
       metadata JSON,
-      embedding VECTOR(${vectorDims}),
+      content_vector VECTOR(1024) GENERATED ALWAYS AS (
+        EMBED_TEXT("${embeddingModel}", content)
+      ) STORED,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      INDEX idx_source (source)
+      INDEX idx_source (source),
+      VECTOR INDEX ((VEC_COSINE_DISTANCE(content_vector)))
     )
   `);
 }

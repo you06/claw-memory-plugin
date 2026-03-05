@@ -11,14 +11,7 @@ export type ApiConnectionConfig = {
   encryptionKey?: string;
 };
 
-export type EmbeddingConfig = {
-  provider: "openai";
-  model: string;
-  apiKey: string;
-};
-
 type BaseMemoryConfig = {
-  embedding?: EmbeddingConfig;
   autoCapture: boolean;
   autoRecall: boolean;
   captureMaxChars: number;
@@ -39,21 +32,7 @@ export type MemoryConfig = DirectMemoryConfig | ApiMemoryConfig;
 export const MEMORY_CATEGORIES = ["preference", "fact", "decision", "entity", "other"] as const;
 export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
 
-const DEFAULT_MODEL = "text-embedding-3-small";
 export const DEFAULT_CAPTURE_MAX_CHARS = 500;
-
-const EMBEDDING_DIMENSIONS: Record<string, number> = {
-  "text-embedding-3-small": 1536,
-  "text-embedding-3-large": 3072,
-};
-
-export function vectorDimsForModel(model: string): number {
-  const dims = EMBEDDING_DIMENSIONS[model];
-  if (!dims) {
-    throw new Error(`Unsupported embedding model: ${model}`);
-  }
-  return dims;
-}
 
 function resolveEnvVars(value: string): string {
   return value.replace(/\$\{([^}]+)\}/g, (_, envVar) => {
@@ -73,15 +52,9 @@ function assertAllowedKeys(value: Record<string, unknown>, allowed: string[], la
   throw new Error(`${label} has unknown keys: ${unknown.join(", ")}`);
 }
 
-function resolveEmbeddingModel(embedding: Record<string, unknown>): string {
-  const model = typeof embedding.model === "string" ? embedding.model : DEFAULT_MODEL;
-  vectorDimsForModel(model);
-  return model;
-}
-
 const DIRECT_KEYS = ["host", "user", "password", "database"];
 const API_KEYS = ["apiUrl", "token", "encryptionKey"];
-const SHARED_KEYS = ["embedding", "autoCapture", "autoRecall", "captureMaxChars"];
+const SHARED_KEYS = ["autoCapture", "autoRecall", "captureMaxChars"];
 const ALL_ALLOWED_KEYS = [...DIRECT_KEYS, ...API_KEYS, ...SHARED_KEYS];
 
 export const memoryConfigSchema = {
@@ -107,19 +80,6 @@ export const memoryConfigSchema = {
       );
     }
 
-    // Shared config
-    const embedding = cfg.embedding as Record<string, unknown> | undefined;
-    let embeddingConfig: EmbeddingConfig | undefined;
-    if (embedding && typeof embedding.apiKey === "string" && embedding.apiKey) {
-      assertAllowedKeys(embedding, ["apiKey", "model"], "embedding config");
-      const model = resolveEmbeddingModel(embedding);
-      embeddingConfig = {
-        provider: "openai",
-        model,
-        apiKey: resolveEnvVars(embedding.apiKey as string),
-      };
-    }
-
     const captureMaxChars =
       typeof cfg.captureMaxChars === "number" ? Math.floor(cfg.captureMaxChars) : undefined;
     if (
@@ -130,14 +90,12 @@ export const memoryConfigSchema = {
     }
 
     const shared = {
-      embedding: embeddingConfig,
       autoCapture: cfg.autoCapture === true,
       autoRecall: cfg.autoRecall !== false,
       captureMaxChars: captureMaxChars ?? DEFAULT_CAPTURE_MAX_CHARS,
     };
 
     if (hasApiKeys) {
-      // API mode
       if (typeof cfg.apiUrl !== "string" || !cfg.apiUrl) {
         throw new Error("apiUrl is required for API mode");
       }
@@ -222,17 +180,6 @@ export const memoryConfigSchema = {
       label: "Database Name",
       placeholder: "memory",
       help: "TiDB database name for storing memories",
-    },
-    "embedding.apiKey": {
-      label: "OpenAI API Key",
-      sensitive: true,
-      placeholder: "sk-proj-...",
-      help: "API key for OpenAI embeddings (or use ${OPENAI_API_KEY})",
-    },
-    "embedding.model": {
-      label: "Embedding Model",
-      placeholder: DEFAULT_MODEL,
-      help: "OpenAI embedding model to use",
     },
     autoCapture: {
       label: "Auto-Capture",

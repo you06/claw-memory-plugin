@@ -41,17 +41,6 @@
       "placeholder": "memory",
       "help": "TiDB database name for storing memories"
     },
-    "embedding.apiKey": {
-      "label": "OpenAI API Key",
-      "sensitive": true,
-      "placeholder": "sk-proj-...",
-      "help": "API key for OpenAI embeddings (or use ${OPENAI_API_KEY})"
-    },
-    "embedding.model": {
-      "label": "Embedding Model",
-      "placeholder": "text-embedding-3-small",
-      "help": "OpenAI embedding model to use"
-    },
     "autoCapture": {
       "label": "Auto-Capture",
       "help": "Automatically capture important information from conversations"
@@ -98,22 +87,6 @@
       "database": {
         "type": "string",
         "description": "TiDB database name (direct mode)"
-      },
-      "embedding": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "apiKey": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string",
-            "enum": [
-              "text-embedding-3-small",
-              "text-embedding-3-large"
-            ]
-          }
-        }
       },
       "autoCapture": {
         "type": "boolean"

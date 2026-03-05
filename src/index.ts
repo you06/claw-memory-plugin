@@ -17,16 +17,16 @@ import {
   type DirectMemoryConfig,
   type ApiMemoryConfig,
   memoryConfigSchema,
-  vectorDimsForModel,
 } from "./config.js";
 import { createConnection, initSchema } from "./db.js";
-import { Embeddings, vectorToString } from "./embedding.js";
 import { MemoryStore } from "./memory-store.js";
 import { ClawMemoryApiClient } from "./api-client.js";
 
 // ============================================================================
 // Capture helpers (ported from memory-lancedb)
 // ============================================================================
+
+const DEFAULT_TIDB_EMBEDDING_MODEL = "tidbcloud_free/amazon/titan-embed-text-v2";
 
 const MEMORY_TRIGGERS = [
   /zapamatuj si|pamatuj|remember/i,
@@ -109,7 +109,7 @@ interface MemoryAdapter {
 }
 
 /** Direct mode adapter — wraps MemoryStore. */
-function directAdapter(store: MemoryStore, embeddings?: Embeddings): MemoryAdapter {
+function directAdapter(store: MemoryStore): MemoryAdapter {
   return {
     async search(query, limit) {
       const results = await store.search(query, limit);
@@ -118,22 +118,27 @@ function directAdapter(store: MemoryStore, embeddings?: Embeddings): MemoryAdapt
         content: r.content,
         source: r.source,
         tags: r.tags,
-        ...("distance" in r ? { distance: (r as { distance: number }).distance } : {}),
+        distance: r.distance,
       }));
     },
     async store(content, opts) {
-      let vecStr: string | undefined;
-      if (embeddings) {
-        const vec = await embeddings.embed(content);
-        vecStr = vectorToString(vec);
-        const existing = await store.searchVector(vecStr, 1);
-        if (existing.length > 0 && existing[0].distance < 0.05) {
-          return { id: existing[0].id }; // duplicate
+      const existing = await store.search(content, 1);
+      if (existing.length > 0) {
+        const candidate = existing[0];
+        if (candidate.distance !== undefined && candidate.distance < 0.05) {
+          return { id: candidate.id }; // duplicate (semantic match)
+        }
+        if (candidate.distance === undefined && candidate.content === content) {
+          return { id: candidate.id }; // duplicate (text match fallback)
         }
       }
       const entry = await store.store(
-        { content, tags: opts?.tags, source: opts?.source, metadata: opts?.importance !== undefined ? { importance: opts.importance } : undefined },
-        vecStr,
+        {
+          content,
+          tags: opts?.tags,
+          source: opts?.source,
+          metadata: opts?.importance !== undefined ? { importance: opts.importance } : undefined,
+        },
       );
       return { id: entry.id };
     },
@@ -204,8 +209,6 @@ const memoryPlugin = {
     // Direct mode vars (for CLI stats)
     let directConn: ReturnType<typeof createConnection> | undefined;
     let directStore: MemoryStore | undefined;
-    let embeddings: Embeddings | undefined;
-    let vectorDim = 1536;
 
     if (cfg.mode === "api") {
       apiClient = new ClawMemoryApiClient(cfg.api.apiUrl, cfg.api.token, cfg.api.encryptionKey);
@@ -213,10 +216,8 @@ const memoryPlugin = {
       api.logger.info(`memory-tidb: plugin registered (API mode, url: ${cfg.api.apiUrl})`);
     } else {
       directConn = createConnection(cfg.tidb);
-      embeddings = cfg.embedding ? new Embeddings(cfg.embedding.apiKey, cfg.embedding.model) : undefined;
-      directStore = new MemoryStore(directConn, embeddings);
-      vectorDim = cfg.embedding ? vectorDimsForModel(cfg.embedding.model) : 1536;
-      adapter = directAdapter(directStore, embeddings);
+      directStore = new MemoryStore(directConn);
+      adapter = directAdapter(directStore);
       api.logger.info(`memory-tidb: plugin registered (direct mode, host: ${cfg.tidb.host}, db: ${cfg.tidb.database})`);
     }
 
@@ -438,7 +439,7 @@ const memoryPlugin = {
             `Mode: Direct`,
             `Host: ${dcfg.tidb.host}`,
             `Database: ${dcfg.tidb.database}`,
-            `Embedding: ${cfg.embedding?.model ?? "not configured (text search only)"}`,
+            `Embedding: TiDB Auto Embedding (${DEFAULT_TIDB_EMBEDDING_MODEL})`,
             `TiDB Zero: ${isZero ? "yes ⚠️ (expires after 30 days — consider claiming or migrating)" : "no (persistent)"}`,
           ];
           return {
@@ -603,10 +604,7 @@ const memoryPlugin = {
               console.log(`API URL: ${cfg.api.apiUrl}`);
               console.log(`Token: ${cfg.api.token.slice(0, 12)}...`);
             }
-            console.log(`Embedding model: ${cfg.embedding?.model ?? "not configured"}`);
-            if (cfg.mode === "direct") {
-              console.log(`Vector dimensions: ${vectorDim}`);
-            }
+            console.log(`Embedding model: ${DEFAULT_TIDB_EMBEDDING_MODEL}`);
           });
 
         // API mode only commands
@@ -642,9 +640,9 @@ const memoryPlugin = {
       id: "memory-tidb",
       start: async () => {
         if (cfg.mode === "direct" && directConn) {
-          await initSchema(directConn, cfg.tidb.database, vectorDim);
+          await initSchema(directConn, cfg.tidb.database);
           api.logger.info(
-            `memory-tidb: initialized (direct, host: ${cfg.tidb.host}, model: ${cfg.embedding?.model ?? "none"})`,
+            `memory-tidb: initialized (direct, host: ${cfg.tidb.host}, model: ${DEFAULT_TIDB_EMBEDDING_MODEL})`,
           );
         } else {
           api.logger.info(

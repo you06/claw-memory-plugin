@@ -6,8 +6,7 @@
   "type": "module",
   "dependencies": {
     "@sinclair/typebox": "0.34.48",
-    "@tidbcloud/serverless": "^0.2.0",
-    "openai": "^6.25.0"
+    "@tidbcloud/serverless": "^0.2.0"
   },
   "openclaw": {
     "extensions": [

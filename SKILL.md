@@ -1,11 +1,11 @@
 ---
 name: memory-tidb
-description: OpenClaw plugin for TiDB-backed long-term memory with vector search. Use this skill to install and configure the memory-tidb plugin, which replaces the default file-based memory with a TiDB Cloud/Zero database and OpenAI embeddings for semantic search.
+description: OpenClaw plugin for TiDB-backed long-term memory with vector search. Uses TiDB Cloud Auto Embedding (built-in, free, no API key needed) for semantic search.
 ---
 
 # memory-tidb — OpenClaw Memory Plugin
 
-An OpenClaw plugin that stores agent memories in TiDB with vector search (OpenAI embeddings). Once installed, `memory_recall`, `memory_store`, and `memory_forget` tools automatically connect to TiDB — no manual server startup needed.
+An OpenClaw plugin that stores agent memories in TiDB with vector search powered by **TiDB Auto Embedding** — no OpenAI API key required. Once installed, `memory_recall`, `memory_store`, and `memory_forget` tools automatically connect to TiDB — no manual server startup needed.
 
 Supports two connection modes:
 - **Direct mode** — connects to TiDB Serverless directly (you manage the database)
@@ -16,7 +16,9 @@ Supports two connection modes:
 - **TiDB database** — either:
   - [TiDB Zero](https://zero.tidbcloud.com/) (free, instant, 30-day TTL) — get one with `curl -s -X POST https://zero.tidbapi.com/v1alpha1/instances`
   - [TiDB Cloud Serverless](https://tidbcloud.com/) (persistent, pay-per-use)
-- **OpenAI API Key** (optional but recommended) — enables semantic/vector search. Without it, search falls back to text matching.
+- **No additional API keys needed** — embedding is handled by TiDB Cloud's built-in Auto Embedding feature (`tidbcloud_free/amazon/titan-embed-text-v2`)
+
+> **Note:** TiDB Auto Embedding is available on TiDB Cloud Starter (AWS). TiDB Zero instances automatically support it after claiming.
 
 ## Installation
 
@@ -52,10 +54,6 @@ Edit your workspace `openclaw.json` (usually `~/.openclaw-<profile>/openclaw.jso
           "user": "your_tidb_user",
           "password": "your_tidb_password",
           "database": "claw_memory",
-          "embedding": {
-            "apiKey": "sk-proj-...",
-            "model": "text-embedding-3-small"
-          },
           "autoRecall": true,
           "autoCapture": false
         }
@@ -102,8 +100,8 @@ grep "memory-tidb" /tmp/openclaw/openclaw-$(date +%Y-%m-%d).log | tail -3
 
 You should see:
 ```
-memory-tidb: plugin registered (host: ..., db: ...)
-memory-tidb: initialized (host: ..., model: text-embedding-3-small)
+memory-tidb: plugin registered (direct mode, host: ..., db: ...)
+memory-tidb: initialized (direct, host: ..., model: tidbcloud_free/amazon/titan-embed-text-v2)
 ```
 
 ## Post-Installation: Notify the User
@@ -131,13 +129,13 @@ On your first interaction with the user after this plugin is installed:
 Once installed, these tools are automatically available to all agents:
 
 ### memory_recall
-Search memories by semantic similarity (or text match if no embedding configured).
+Search memories by semantic similarity using TiDB Auto Embedding.
 ```
 memory_recall(query="project decisions about auth", limit=5)
 ```
 
 ### memory_store
-Save information to long-term memory. Auto-generates embedding on write.
+Save information to long-term memory. Embedding is generated automatically by TiDB on write.
 ```
 memory_store(text="User prefers dark mode", tags=["preference"], source="chat")
 ```
@@ -192,9 +190,8 @@ To keep data permanently, **claim** the instance (`openclaw tidb-memory claim` o
 | Problem | Solution |
 |---------|----------|
 | `plugin not found: memory-tidb` | Run `openclaw plugins install -l <path>` and restart gateway |
-| `embedding.apiKey is required` | Add an OpenAI API key, or remove the `embedding` section for text search only |
 | `must have required property 'host'` | Ensure host/user/password/database are all set in config |
-| Semantic search returns no results | Old memories may lack embeddings; re-store or backfill manually |
+| Semantic search returns poor results | TiDB Auto Embedding requires TiDB Cloud Starter (AWS). Ensure your cluster supports it. Falls back to text LIKE search otherwise. |
 
 ## Acknowledgements
 
